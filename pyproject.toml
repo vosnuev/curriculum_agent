@@ -13,10 +13,13 @@ dependencies = [
     "langchain-pinecone>=0.2.0",
     "cohere>=5.0.0",
     "pypdf>=4.0.0",
+    "pinecone>=7.3.0",
 ]
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "ipykernel>=6.0.0",
     "jupyter>=1.0.0",
 ]
+
+[tool.uv]

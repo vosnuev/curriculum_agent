@@ -1,8 +1,10 @@
 python-dotenv
+pinecone
 langchain
 langchain-openai
 langchain-community
-langchain-text-splitters
 langchain-pinecone
-cohere
+langchain-cohere
 pypdf
+cohere
+openai
