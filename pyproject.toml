@@ -1,0 +1,22 @@
+[project]
+name = "curriculum-agent"
+version = "0.1.0"
+description = "2026 고등학교 교육과정 학년별 RAG Q&A 에이전트"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "python-dotenv>=1.0.0",
+    "langchain>=0.3.0",
+    "langchain-openai>=0.2.0",
+    "langchain-community>=0.3.0",
+    "langchain-text-splitters>=0.3.0",
+    "langchain-pinecone>=0.2.0",
+    "cohere>=5.0.0",
+    "pypdf>=4.0.0",
+]
+
+[tool.uv]
+dev-dependencies = [
+    "ipykernel>=6.0.0",
+    "jupyter>=1.0.0",
+]
