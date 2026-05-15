@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>2026 교육과정 Q&A</title>
+  <style>
+    /* ── 기본 리셋 & 변수 ─────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #f4f6f9;
+      --sidebar-bg: #1e2432;
+      --card-bg: #ffffff;
+      --border: #e2e8f0;
+      --text: #1a202c;
+      --text-muted: #718096;
+      --accent: #4f7df3;
+      --accent-light: #ebf0ff;
+      --green: #38a169;
+      --green-light: #f0fff4;
+      --green-border: #9ae6b4;
+      --yellow: #d69e2e;
+      --yellow-light: #fffff0;
+      --yellow-border: #faf089;
+      --red-light: #fff5f5;
+      --radius: 12px;
+      --shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    body {
+      font-family: 'Pretendard', 'Noto Sans KR', -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* ── 사이드바 ──────────────────────────────────────────────────── */
+    .sidebar {
+      width: 260px;
+      min-width: 260px;
+      background: var(--sidebar-bg);
+      display: flex;
+      flex-direction: column;
+      padding: 24px 16px;
+      gap: 20px;
+      overflow-y: auto;
+    }
+    .sidebar-title {
+      color: #fff;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    .sidebar-title span { color: var(--accent); }
+
+    .grade-section label {
+      display: block;
+      color: #a0aec0;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .grade-btns { display: flex; gap: 8px; }
+    .grade-btn {
+      flex: 1;
+      padding: 8px 4px;
+      border: 1.5px solid rgba(255,255,255,0.15);
+      background: transparent;
+      color: #cbd5e0;
+      border-radius: 8px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .grade-btn:hover { border-color: var(--accent); color: #fff; }
+    .grade-btn.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+      font-weight: 600;
+    }
+
+    .history-section label {
+      display: block;
+      color: #a0aec0;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .history-item {
+      color: #718096;
+      font-size: 12px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: background 0.1s;
+    }
+    .history-item:hover { background: rgba(255,255,255,0.07); color: #e2e8f0; }
+
+    .new-chat-btn {
+      margin-top: auto;
+      padding: 10px;
+      background: rgba(79,125,243,0.2);
+      border: 1.5px solid var(--accent);
+      color: #90b4ff;
+      border-radius: 8px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .new-chat-btn:hover { background: var(--accent); color: #fff; }
+
+    /* ── 메인 영역 ─────────────────────────────────────────────────── */
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      min-width: 0;
+    }
+
+    .topbar {
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .topbar-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .grade-badge {
+      padding: 3px 10px;
+      background: var(--accent-light);
+      color: var(--accent);
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    /* ── 대화 영역 ─────────────────────────────────────────────────── */
+    .chat-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      scroll-behavior: smooth;
+    }
+
+    /* 빈 상태 */
+    .empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      color: var(--text-muted);
+    }
+    .empty-state .icon { font-size: 48px; }
+    .empty-state p { font-size: 15px; }
+
+    /* 사용자 메시지 */
+    .user-msg {
+      align-self: flex-end;
+      background: var(--accent);
+      color: #fff;
+      padding: 10px 16px;
+      border-radius: 18px 18px 4px 18px;
+      font-size: 14px;
+      max-width: 60%;
+      line-height: 1.5;
+    }
+
+    /* 보기 선택 */
+    .topic-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      box-shadow: var(--shadow);
+      max-width: 580px;
+    }
+    .topic-card p {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+    .topic-btns { display: flex; flex-direction: column; gap: 8px; }
+    .topic-btn {
+      padding: 10px 16px;
+      border: 1.5px solid var(--border);
+      background: #fff;
+      border-radius: 8px;
+      font-size: 14px;
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.15s;
+      color: var(--text);
+    }
+    .topic-btn:hover {
+      border-color: var(--accent);
+      background: var(--accent-light);
+      color: var(--accent);
+    }
+    .topic-btn.other {
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+    .topic-btn.other:hover { border-color: #cbd5e0; background: #f7fafc; color: var(--text); }
+
+    /* 로딩 */
+    .loading-msg {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+    .spinner {
+      width: 18px; height: 18px;
+      border: 2px solid #e2e8f0;
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── 답변 카드 ─────────────────────────────────────────────────── */
+    .answer-wrap { max-width: 700px; display: flex; flex-direction: column; gap: 12px; }
+
+    /* 핵심 답변 */
+    .section-summary {
+      background: var(--green-light);
+      border: 1px solid var(--green-border);
+      border-left: 4px solid var(--green);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+    }
+    .section-summary .sec-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--green);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .section-summary .sec-body {
+      font-size: 15px;
+      font-weight: 500;
+      color: #276749;
+      line-height: 1.6;
+    }
+
+    /* 일반 섹션 */
+    .section-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      box-shadow: var(--shadow);
+    }
+    .section-card .sec-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .section-card .sec-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .source-badge {
+      font-size: 11px;
+      padding: 3px 8px;
+      background: #edf2f7;
+      color: #4a5568;
+      border-radius: 4px;
+      font-weight: 600;
+      white-space: nowrap;
+      cursor: default;
+    }
+    .source-badge::before { content: '📄 출처: '; }
+    .section-card .sec-body { font-size: 14px; line-height: 1.7; }
+
+    /* 하위 섹션 제목 */
+    .sub-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin: 12px 0 6px;
+    }
+    .sub-title:first-child { margin-top: 0; }
+
+    /* 주의사항 */
+    .section-caution {
+      background: var(--yellow-light);
+      border: 1px solid var(--yellow-border);
+      border-left: 4px solid var(--yellow);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+    }
+    .section-caution .sec-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--yellow);
+      margin-bottom: 10px;
+    }
+    .section-caution .sec-body { font-size: 14px; line-height: 1.7; }
+    .caution-item { margin-bottom: 6px; color: #744210; }
+
+    /* 마크다운 표 */
+    .md-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 8px 0;
+      font-size: 13px;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    .md-table th {
+      background: #f7fafc;
+      padding: 9px 14px;
+      text-align: left;
+      font-weight: 600;
+      color: #4a5568;
+      border-bottom: 1.5px solid var(--border);
+    }
+    .md-table td {
+      padding: 8px 14px;
+      border-bottom: 1px solid #edf2f7;
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .md-table tr:last-child td { border-bottom: none; }
+    .md-table tr:hover td { background: #f7fafc; }
+
+    /* bold */
+    .md-bold { font-weight: 700; }
+
+    /* ── 입력창 ────────────────────────────────────────────────────── */
+    .input-area {
+      padding: 16px 24px 20px;
+      background: var(--card-bg);
+      border-top: 1px solid var(--border);
+    }
+    .input-box {
+      display: flex;
+      align-items: flex-end;
+      gap: 10px;
+      background: #f7fafc;
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 14px;
+      transition: border-color 0.15s;
+    }
+    .input-box:focus-within { border-color: var(--accent); background: #fff; }
+    .input-box textarea {
+      flex: 1;
+      border: none;
+      background: transparent;
+      resize: none;
+      font-size: 14px;
+      font-family: inherit;
+      color: var(--text);
+      line-height: 1.5;
+      max-height: 120px;
+      outline: none;
+    }
+    .input-box textarea::placeholder { color: #a0aec0; }
+    .send-btn {
+      width: 36px; height: 36px;
+      background: var(--accent);
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.15s;
+    }
+    .send-btn:hover { background: #3a6de0; }
+    .send-btn:disabled { background: #cbd5e0; cursor: not-allowed; }
+    .send-btn svg { width: 16px; height: 16px; fill: #fff; }
+    .input-hint {
+      font-size: 11px;
+      color: #a0aec0;
+      margin-top: 6px;
+      text-align: right;
+    }
+
+    /* 재입력 모달 */
+    .requery-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .requery-input {
+      flex: 1;
+      padding: 8px 12px;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .requery-input:focus { border-color: var(--accent); }
+    .requery-btn {
+      padding: 8px 14px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── 사이드바 ──────────────────────────────────────────────────────── -->
+<aside class="sidebar">
+  <div class="sidebar-title">📚 <span>교육과정</span> Q&A</div>
+
+  <div class="grade-section">
+    <label>학년 선택</label>
+    <div class="grade-btns">
+      <button class="grade-btn active" data-grade="1,2" onclick="setGrade('1,2', this)">1·2학년</button>
+      <button class="grade-btn" data-grade="3" onclick="setGrade('3', this)">3학년</button>
+    </div>
+  </div>
+
+  <div class="history-section">
+    <label>최근 질문</label>
+    <div class="history-list" id="historyList">
+      <span style="color:#4a5568;font-size:12px;">아직 질문 내역이 없습니다.</span>
+    </div>
+  </div>
+
+  <button class="new-chat-btn" onclick="newChat()">+ 새 대화 시작</button>
+</aside>
+
+<!-- ── 메인 ─────────────────────────────────────────────────────────── -->
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-title">2026 고등학교 교육과정</div>
+    <div class="grade-badge" id="gradeBadge">1·2학년</div>
+  </div>
+
+  <div class="chat-area" id="chatArea">
+    <div class="empty-state" id="emptyState">
+      <div class="icon">🎓</div>
+      <p>궁금한 교육과정 내용을 질문하세요</p>
+    </div>
+  </div>
+
+  <div class="input-area">
+    <div class="input-box">
+      <textarea id="queryInput" rows="1" placeholder="질문을 입력하세요 (Shift+Enter: 줄바꿈, Enter: 전송)"></textarea>
+      <button class="send-btn" id="sendBtn" onclick="handleSend()">
+        <svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
+      </button>
+    </div>
+    <div class="input-hint">출처: 서울특별시교육청 2026학년도 고등학교 교육과정 편성·운영 방향</div>
+  </div>
+</div>
+
+<script>
+  // ── 설정 ──────────────────────────────────────────────────────────────
+  const API_BASE = "http://localhost:8000"; // 백엔드 주소 (ngrok 사용 시 교체)
+
+  // ── 상태 ──────────────────────────────────────────────────────────────
+  let selectedGrade = "1,2";
+  let conversationHistory = [];
+  let queryHistory = [];
+  let pendingCacheKey = null;
+  let pendingQuery = null;
+  let isLoading = false;
+
+  // ── 학년 선택 ──────────────────────────────────────────────────────────
+  function setGrade(grade, btn) {
+    selectedGrade = grade;
+    document.querySelectorAll(".grade-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("gradeBadge").textContent = grade === "1,2" ? "1·2학년" : "3학년";
+  }
+
+  // ── 새 대화 ────────────────────────────────────────────────────────────
+  function newChat() {
+    conversationHistory = [];
+    pendingCacheKey = null;
+    pendingQuery = null;
+    const chat = document.getElementById("chatArea");
+    chat.innerHTML = `<div class="empty-state" id="emptyState">
+      <div class="icon">🎓</div>
+      <p>궁금한 교육과정 내용을 질문하세요</p>
+    </div>`;
+  }
+
+  // ── 입력창 자동 높이 ────────────────────────────────────────────────────
+  const textarea = document.getElementById("queryInput");
+  textarea.addEventListener("input", () => {
+    textarea.style.height = "auto";
+    textarea.style.height = Math.min(textarea.scrollHeight, 120) + "px";
+  });
+  textarea.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
+  });
+
+  // ── 메시지 전송 ──────────────────────────────────────────────────────────
+  async function handleSend() {
+    const query = textarea.value.trim();
+    if (!query || isLoading) return;
+    textarea.value = "";
+    textarea.style.height = "auto";
+
+    hideEmpty();
+    appendUserMsg(query);
+    addHistory(query);
+    setLoading(true);
+
+    try {
+      const res = await fetch(`${API_BASE}/api/query`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query, grade: selectedGrade, history: conversationHistory }),
+      });
+      const data = await res.json();
+
+      if (data.action === "answer") {
+        await fetchAndRenderAnswer(query, query, data.cache_key);
+      } else {
+        setLoading(false);
+        renderTopics(query, data.topics, data.cache_key);
+      }
+    } catch (err) {
+      setLoading(false);
+      appendError("서버 연결 오류: " + err.message);
+    }
+  }
+
+  // ── 보기 선택 렌더링 ──────────────────────────────────────────────────
+  function renderTopics(query, topics, cacheKey) {
+    const card = document.createElement("div");
+    card.className = "topic-card";
+
+    const btnsHtml = topics.map(t =>
+      `<button class="topic-btn" onclick="selectTopic(this,'${escapeAttr(query)}','${escapeAttr(t.title)}','${cacheKey}')">${t.id}) ${t.title}</button>`
+    ).join("");
+
+    card.innerHTML = `
+      <p>어떤 내용이 궁금하신가요?</p>
+      <div class="topic-btns">
+        ${btnsHtml}
+        <button class="topic-btn other" onclick="showRequery(this,'${escapeAttr(query)}')">
+          4) 기타 — 질문을 다시 입력하기
+        </button>
+      </div>
+    `;
+    appendToChat(card);
+  }
+
+  async function selectTopic(btn, query, topicTitle, cacheKey) {
+    const card = btn.closest(".topic-card");
+    card.remove();
+    appendUserMsg(topicTitle);
+    setLoading(true);
+    await fetchAndRenderAnswer(query, topicTitle, cacheKey);
+  }
+
+  function showRequery(btn, originalQuery) {
+    const card = btn.closest(".topic-card");
+    const row = document.createElement("div");
+    row.className = "requery-row";
+    row.innerHTML = `
+      <input class="requery-input" type="text" placeholder="더 구체적인 질문을 입력하세요" />
+      <button class="requery-btn">전송</button>
+    `;
+    card.appendChild(row);
+    const input = row.querySelector("input");
+    const sendB = row.querySelector("button");
+    btn.style.display = "none";
+    input.focus();
+
+    const submit = async () => {
+      const newQuery = input.value.trim();
+      if (!newQuery) return;
+      card.remove();
+      appendUserMsg(newQuery);
+      addHistory(newQuery);
+      setLoading(true);
+      try {
+        const res = await fetch(`${API_BASE}/api/query`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: newQuery, grade: selectedGrade, history: conversationHistory }),
+        });
+        const data = await res.json();
+        if (data.action === "answer") {
+          await fetchAndRenderAnswer(newQuery, newQuery, data.cache_key);
+        } else {
+          setLoading(false);
+          renderTopics(newQuery, data.topics, data.cache_key);
+        }
+      } catch (err) {
+        setLoading(false);
+        appendError("서버 연결 오류: " + err.message);
+      }
+    };
+    sendB.onclick = submit;
+    input.addEventListener("keydown", e => { if (e.key === "Enter") submit(); });
+  }
+
+  // ── 답변 가져오기 & 렌더링 ──────────────────────────────────────────────
+  async function fetchAndRenderAnswer(query, topicTitle, cacheKey) {
+    try {
+      const res = await fetch(`${API_BASE}/api/answer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query, grade: selectedGrade, topic_title: topicTitle,
+          cache_key: cacheKey, history: conversationHistory
+        }),
+      });
+      const data = await res.json();
+      setLoading(false);
+      renderAnswer(data.answer);
+
+      conversationHistory.push({ role: "user", content: query });
+      conversationHistory.push({ role: "assistant", content: data.answer });
+    } catch (err) {
+      setLoading(false);
+      appendError("답변 생성 오류: " + err.message);
+    }
+  }
+
+  // ── 마크다운 → 섹션별 HTML 렌더링 ───────────────────────────────────────
+  function renderAnswer(markdown) {
+    const wrap = document.createElement("div");
+    wrap.className = "answer-wrap";
+
+    // "## " 기준으로 섹션 분리
+    const rawSections = markdown.split(/\n(?=## )/);
+    rawSections.forEach(raw => {
+      const lines = raw.trim().split("\n");
+      const titleLine = lines[0].replace(/^## /, "").trim();
+      const body = lines.slice(1).join("\n").trim();
+
+      if (!titleLine) return;
+
+      // 출처 파싱: "제목 | pg.X"
+      const sourceMatch = titleLine.match(/\|\s*pg\.(\d+)/i);
+      const source = sourceMatch ? sourceMatch[1] : null;
+      const title = titleLine.replace(/\|\s*pg\.\d+/i, "").trim();
+
+      if (title === "핵심 답변") {
+        wrap.appendChild(makeSummaryCard(body));
+      } else if (title.includes("주의사항")) {
+        wrap.appendChild(makeCautionCard(title, body));
+      } else {
+        wrap.appendChild(makeSectionCard(title, source, body));
+      }
+    });
+
+    appendToChat(wrap);
+    scrollBottom();
+  }
+
+  function makeSummaryCard(body) {
+    const el = document.createElement("div");
+    el.className = "section-summary";
+    el.innerHTML = `<div class="sec-title">✅ 핵심 답변</div><div class="sec-body">${renderInline(body)}</div>`;
+    return el;
+  }
+
+  function makeCautionCard(title, body) {
+    const el = document.createElement("div");
+    el.className = "section-caution";
+    el.innerHTML = `<div class="sec-title">${title}</div><div class="sec-body">${renderBody(body)}</div>`;
+    return el;
+  }
+
+  function makeSectionCard(title, source, body) {
+    const el = document.createElement("div");
+    el.className = "section-card";
+    const srcBadge = source ? `<span class="source-badge">2026 교육과정 편성·운영 방향 (pg.${source})</span>` : "";
+    el.innerHTML = `
+      <div class="sec-header">
+        <div class="sec-title">${escapeHtml(title)}</div>
+        ${srcBadge}
+      </div>
+      <div class="sec-body">${renderBody(body)}</div>
+    `;
+    return el;
+  }
+
+  // body 안에서 ### 하위 섹션, 표, 리스트, bold 처리
+  function renderBody(md) {
+    if (!md) return "";
+    const parts = md.split(/\n(?=### )/);
+    return parts.map(part => {
+      if (part.startsWith("### ")) {
+        const lines = part.split("\n");
+        const subTitle = lines[0].replace(/^### /, "").trim();
+        const rest = lines.slice(1).join("\n").trim();
+        return `<div class="sub-title">${escapeHtml(subTitle)}</div>${renderContent(rest)}`;
+      }
+      return renderContent(part);
+    }).join("");
+  }
+
+  function renderContent(md) {
+    if (!md.trim()) return "";
+
+    // 마크다운 표 감지
+    const tableMatch = md.match(/((?:\|.+\|\n?)+)/s);
+    if (tableMatch) {
+      const before = md.slice(0, tableMatch.index);
+      const tableBlock = tableMatch[0];
+      const after = md.slice(tableMatch.index + tableMatch[0].length);
+      return renderInline(before) + renderTable(tableBlock) + renderInline(after);
+    }
+
+    return renderInline(md);
+  }
+
+  function renderTable(tableText) {
+    const rows = tableText.trim().split("\n").filter(r => r.trim());
+    if (rows.length < 2) return escapeHtml(tableText);
+
+    const headerCells = rows[0].split("|").map(c => c.trim()).filter(Boolean);
+    // rows[1]은 구분선 (---) → 스킵
+    const bodyRows = rows.slice(2).filter(r => !r.match(/^\s*\|[-| ]+\|\s*$/));
+
+    const thead = `<tr>${headerCells.map(c => `<th>${escapeHtml(c)}</th>`).join("")}</tr>`;
+    const tbody = bodyRows.map(row => {
+      const cells = row.split("|").map(c => c.trim()).filter(Boolean);
+      return `<tr>${cells.map(c => `<td>${renderInline(c)}</td>`).join("")}</tr>`;
+    }).join("");
+
+    return `<table class="md-table"><thead>${thead}</thead><tbody>${tbody}</tbody></table>`;
+  }
+
+  // 인라인 스타일: **bold**, 줄바꿈
+  function renderInline(text) {
+    if (!text) return "";
+    return escapeHtml(text)
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/\n/g, "<br>");
+  }
+
+  // ── 유틸 ───────────────────────────────────────────────────────────────
+  function hideEmpty() {
+    const e = document.getElementById("emptyState");
+    if (e) e.remove();
+  }
+
+  function appendUserMsg(text) {
+    const el = document.createElement("div");
+    el.className = "user-msg";
+    el.textContent = text;
+    appendToChat(el);
+  }
+
+  function appendError(msg) {
+    const el = document.createElement("div");
+    el.style.cssText = "color:#e53e3e;font-size:13px;padding:8px;";
+    el.textContent = "⚠️ " + msg;
+    appendToChat(el);
+  }
+
+  let loadingEl = null;
+  function setLoading(on) {
+    isLoading = on;
+    document.getElementById("sendBtn").disabled = on;
+    if (on) {
+      loadingEl = document.createElement("div");
+      loadingEl.className = "loading-msg";
+      loadingEl.innerHTML = `<div class="spinner"></div><span>분석 중...</span>`;
+      appendToChat(loadingEl);
+    } else {
+      if (loadingEl) { loadingEl.remove(); loadingEl = null; }
+    }
+  }
+
+  function appendToChat(el) {
+    document.getElementById("chatArea").appendChild(el);
+    scrollBottom();
+  }
+
+  function scrollBottom() {
+    const chat = document.getElementById("chatArea");
+    chat.scrollTop = chat.scrollHeight;
+  }
+
+  function addHistory(query) {
+    queryHistory.unshift(query);
+    if (queryHistory.length > 10) queryHistory.pop();
+    const list = document.getElementById("historyList");
+    list.innerHTML = queryHistory.map(q =>
+      `<div class="history-item" title="${escapeAttr(q)}">${escapeHtml(q)}</div>`
+    ).join("");
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+  function escapeAttr(s) {
+    return String(s).replace(/'/g, "\\'").replace(/"/g, "&quot;");
+  }
+</script>
+</body>
+</html>
