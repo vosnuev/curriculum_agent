@@ -69,10 +69,19 @@ class AdvancedRAG:
             pinecone_api_key=self.pinecone_api_key,
         )
 
-    # ── Step 1: 넓게 검색 → 핵심 주제 3개 도출 ─────────────────────────
+    # ── Step 1: 검색 + 질문 분석 → 직접 답변 or 보기 제시 결정 ──────────
 
-    def suggest_topics(self, query: str, selected_grade: str):
-        """MultiQuery로 폭넓게 검색하고 LLM이 관련성 높은 핵심 주제 3개를 제안한다."""
+    def analyze_query(self, query: str, selected_grade: str) -> dict:
+        """
+        MultiQuery로 검색 후 LLM이 질문의 구체성을 판단한다.
+
+        반환값:
+          {"action": "answer", "docs": [...]}
+          {"action": "choose", "topics": [...], "docs": [...]}
+
+        action == "answer": 질문이 충분히 구체적 → 보기 없이 바로 답변
+        action == "choose": 질문이 포괄적 → 서로 다른 범주의 보기 3개 제시
+        """
         base_retriever = self.vectorstore.as_retriever(
             search_kwargs={"filter": {"grade": selected_grade}, "k": 15}
         )
@@ -82,44 +91,64 @@ class AdvancedRAG:
         docs = mq_retriever.invoke(query)
 
         docs_summary = "\n\n".join(
-            f"[문서 {i+1}] (pg.{doc.metadata.get('page', 0)+1})\n{doc.page_content[:250]}"
+            f"[문서 {i+1}] (pg.{doc.metadata.get('page', 0)+1})\n{doc.page_content[:300]}"
             for i, doc in enumerate(docs[:12])
         )
 
         prompt = f"""사용자 질문: "{query}"
 
-검색된 관련 문서들:
+검색된 관련 문서:
 {docs_summary}
 
-위 문서들을 분석하여 사용자 질문과 가장 관련성 높은 핵심 주제 3개를 도출하세요.
-각 주제 title은 10자 이내로 짧고 명확하게 작성하세요.
+[판단 기준]
+다음 중 하나를 선택하세요.
+
+(A) 직접 답변 — action: "answer"
+  - 질문에 특정 학교유형, 과목명, 구체적 수치 등 명확한 키워드가 있는 경우
+  - 질문의 답이 PDF 내 1~2곳에 집중되어 있는 경우
+  - 단순 사실 확인형 질문 (예: "일반고 총 이수학점은?", "창체 시간 배당은?")
+  - 주제가 하나여서 보기로 쪼개면 오히려 중복되는 경우
+
+(B) 보기 제시 — action: "choose"
+  - 질문이 포괄적이어서 여러 다른 범주에 걸쳐 있는 경우
+    예) 학교 유형별로 답이 다를 때 (일반고/특목고/자율고/특성화고)
+    예) 과목 영역별로 내용이 달라질 때
+    예) 질문 자체가 너무 짧고 모호한 경우
+  - 각 보기는 반드시 서로 다른 범주/카테고리여야 함
+  - 비슷한 표현이나 같은 개념을 다른 말로 쓴 보기는 절대 금지
 
 반드시 아래 JSON 형식으로만 응답하세요 (다른 텍스트 없이):
-{{"topics":[{{"id":1,"title":"짧은 주제명"}},{{"id":2,"title":"짧은 주제명"}},{{"id":3,"title":"짧은 주제명"}}]}}"""
+
+직접 답변일 때:
+{{"action":"answer"}}
+
+보기 제시일 때 (보기는 서로 완전히 다른 범주):
+{{"action":"choose","topics":[{{"id":1,"title":"10자이내 범주명"}},{{"id":2,"title":"10자이내 범주명"}},{{"id":3,"title":"10자이내 범주명"}}]}}"""
 
         response = self.llm.invoke(prompt)
         data = self._parse_json(response.content)
-        return data["topics"], docs
+        data["docs"] = docs
+        return data
 
-    # ── Step 2: 선택된 주제로 재랭크 → (pg. X) 출처 포함 답변 ───────────
+    # ── Step 2: Rerank → (pg. X) 출처 포함 답변 ─────────────────────────
 
-    def get_detailed_answer(
+    def get_answer(
         self,
         query: str,
         selected_grade: str,
-        selected_topic: dict,
+        topic_title: str,          # 직접 답변 시 query 그대로, 보기 선택 시 선택된 주제명
         all_docs: list,
         conversation_history: list,
-    ):
-        """선택된 주제로 CohereRerank 재랭크 후 (pg. X) 형식으로 출처를 명시하며 답변한다."""
-        topic_query = f"{selected_topic['title']} {query}"
+    ) -> str:
+        """CohereRerank 재랭크 후 (pg. X) 형식으로 출처를 명시하며 답변한다."""
+        rerank_query = f"{topic_title} {query}" if topic_title != query else query
 
         compressor = CohereRerank(
             cohere_api_key=self.cohere_api_key,
             model="rerank-multilingual-v3.0",
             top_n=3,
         )
-        ranked_docs = compressor.compress_documents(all_docs, topic_query)
+        ranked_docs = compressor.compress_documents(all_docs, rerank_query)
         if not ranked_docs:
             ranked_docs = all_docs[:3]
 
@@ -139,7 +168,6 @@ class AdvancedRAG:
 
         template = """당신은 고등학교 교육과정 편성 및 운영 지침 전문 상담원입니다.
 선택된 학년: {grade}학년
-선택된 주제: {topic}
 {history}
 아래 참고 문서를 바탕으로 질문에 구체적이고 명확하게 답변하세요.
 각 내용마다 출처를 "(pg. X)에 따르면" 또는 문장 끝에 "(pg. X)" 형식으로 반드시 명시하세요.
@@ -154,15 +182,15 @@ class AdvancedRAG:
 답변:"""
 
         chain = ChatPromptTemplate.from_template(template) | self.llm
-        return chain.invoke(
+        result = chain.invoke(
             {
                 "grade": selected_grade,
-                "topic": selected_topic["title"],
                 "history": history_text,
                 "context": context,
                 "question": query,
             }
         )
+        return result.content
 
     # ── 유틸 ────────────────────────────────────────────────────────────
 
@@ -187,95 +215,49 @@ def select_grade() -> str:
         print("1 또는 2를 입력하세요.")
 
 
-def run_topic_selection(rag: AdvancedRAG, query: str, grade: str):
-    """주제 선택 루프. (selected_topic, final_query, docs) 또는 None 반환."""
+def handle_query(rag: AdvancedRAG, query: str, grade: str, conversation_history: list):
+    """
+    질문 하나를 처리한다.
+    - 구체적 질문 → 바로 답변
+    - 포괄적 질문 → 보기(최대 3 + 기타) 제시 후 답변
+    반환: 최종 답변 문자열 또는 None (사용자가 취소한 경우)
+    """
     current_query = query
+
     while True:
-        print("\n관련 주제 분석 중...")
+        print("\n분석 중...")
         try:
-            topics, docs = rag.suggest_topics(current_query, grade)
+            result = rag.analyze_query(current_query, grade)
         except Exception as e:
             print(f"오류: {e}")
             return None
 
-        print("\n어떤 내용이 궁금하신가요?")
-        for t in topics:
-            print(f"  {t['id']}) {t['title']}")
-        print("  4) 기타 — 질문을 다시 입력하기")
+        docs = result["docs"]
 
-        choice = input("\n선택 (1/2/3/4): ").strip()
-
-        if choice == "4":
-            current_query = input("더 구체적인 질문을 입력하세요: ").strip()
-            if not current_query:
+        # ── 구체적 질문: 바로 답변 ──────────────────────────────────────
+        if result["action"] == "answer":
+            print("\n답변 생성 중...")
+            try:
+                answer = rag.get_answer(current_query, grade, current_query, docs, conversation_history)
+                print("\n" + "=" * 55)
+                print(answer)
+                print("=" * 55)
+                return answer
+            except Exception as e:
+                print(f"오류: {e}")
                 return None
-            continue  # 새 질문으로 주제 재분석
 
-        if choice in ("1", "2", "3"):
-            idx = int(choice) - 1
-            if idx < len(topics):
-                return topics[idx], current_query, docs
-
-        print("1, 2, 3, 또는 4를 입력하세요.")
-
-
-def run_interactive(rag: AdvancedRAG):
-    print("=" * 55)
-    print("  2026 고등학교 교육과정 Q&A 시스템")
-    print("  (종료: 'quit' 입력)")
-    print("=" * 55)
-
-    # 학년은 세션 시작 시 한 번만 선택
-    grade = select_grade()
-    conversation_history: list[dict] = []
-
-    print("\n질문을 입력하세요. 언제든 'quit'을 입력하면 종료됩니다.")
-
-    while True:
-        print()
-        query = input("질문: ").strip()
-
-        if query.lower() in ("quit", "exit", "종료", "q"):
-            break
-        if not query:
-            continue
-
-        result = run_topic_selection(rag, query, grade)
-        if result is None:
-            continue
-
-        selected_topic, final_query, docs = result
-
-        print(f"\n'{selected_topic['title']}' 답변 생성 중...")
-        try:
-            response = rag.get_detailed_answer(
-                final_query, grade, selected_topic, docs, conversation_history
-            )
-            print("\n" + "=" * 55)
-            print(response.content)
-            print("=" * 55)
-
-            # 대화 기록 업데이트 (follow-up 맥락 유지)
-            conversation_history.append({"role": "user", "content": final_query})
-            conversation_history.append({"role": "assistant", "content": response.content})
-
-        except Exception as e:
-            print(f"오류: {e}")
-
-        # 추가 안내 없이 바로 다음 질문 대기
-
-    print("\n시스템을 종료합니다.")
-
-
-if __name__ == "__main__":
-    rag = AdvancedRAG()
-
-    # ── 최초 1회만 인덱싱 시 아래 주석 해제 후 실행 ──
-    # base_dir = os.path.dirname(os.path.abspath(__file__))
-    # files = [
-    #     os.path.join(base_dir, "data", "2026학년도 고등학교 1,2학년 교육과정 편성·운영 방향.pdf"),
-    #     os.path.join(base_dir, "data", "2026학년도 고등학교 3학년 교육과정 편성·운영 방향.pdf"),
-    # ]
-    # rag.ingest_documents(files)
-
-    run_interactive(rag)
+        # ── 포괄적 질문: 보기 제시 ──────────────────────────────────────
+        topics = result.get("topics", [])
+        if not topics:
+            # topics가 비어있으면 직접 답변으로 폴백
+            print("\n답변 생성 중...")
+            try:
+                answer = rag.get_answer(current_query, grade, current_query, docs, conversation_history)
+                print("\n" + "=" * 55)
+                print(answer)
+                print("=" * 55)
+                return answer
+            except Exception as e:
+                print(f"오류: {e}")
+                re
