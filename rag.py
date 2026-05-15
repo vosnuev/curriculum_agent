@@ -14,7 +14,7 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_pinecone import PineconeVectorStore
 from langchain_classic.retrievers.multi_query import MultiQueryRetriever
-from langchain_classic.retrievers.document_compressors import CohereRerank
+from langchain_cohere import CohereRerank
 from langchain_core.prompts import ChatPromptTemplate
 
 load_dotenv()
@@ -69,10 +69,10 @@ class AdvancedRAG:
             pinecone_api_key=self.pinecone_api_key,
         )
 
-    # ── Step 1: 넓게 검색 → 주제 2개 도출 ──────────────────────────────
+    # ── Step 1: 넓게 검색 → 핵심 주제 3개 도출 ─────────────────────────
 
     def suggest_topics(self, query: str, selected_grade: str):
-        """MultiQuery로 폭넓게 검색하고 LLM이 2가지 핵심 주제를 제안한다."""
+        """MultiQuery로 폭넓게 검색하고 LLM이 관련성 높은 핵심 주제 3개를 제안한다."""
         base_retriever = self.vectorstore.as_retriever(
             search_kwargs={"filter": {"grade": selected_grade}, "k": 15}
         )
@@ -82,8 +82,8 @@ class AdvancedRAG:
         docs = mq_retriever.invoke(query)
 
         docs_summary = "\n\n".join(
-            f"[문서 {i+1}] (p.{doc.metadata.get('page', 0)+1})\n{doc.page_content[:250]}"
-            for i, doc in enumerate(docs[:10])
+            f"[문서 {i+1}] (pg.{doc.metadata.get('page', 0)+1})\n{doc.page_content[:250]}"
+            for i, doc in enumerate(docs[:12])
         )
 
         prompt = f"""사용자 질문: "{query}"
@@ -91,22 +91,27 @@ class AdvancedRAG:
 검색된 관련 문서들:
 {docs_summary}
 
-위 문서들을 분석하여 사용자 질문에 답하는 데 필요한 핵심 주제 2개를 도출하세요.
-각 주제는 문서의 실제 내용을 바탕으로 구체적으로 작성하세요.
+위 문서들을 분석하여 사용자 질문과 가장 관련성 높은 핵심 주제 3개를 도출하세요.
+각 주제 title은 10자 이내로 짧고 명확하게 작성하세요.
 
 반드시 아래 JSON 형식으로만 응답하세요 (다른 텍스트 없이):
-{{"topics":[{{"id":1,"title":"주제명","desc":"어떤 내용인지 한 줄 설명"}},{{"id":2,"title":"주제명","desc":"어떤 내용인지 한 줄 설명"}}]}}"""
+{{"topics":[{{"id":1,"title":"짧은 주제명"}},{{"id":2,"title":"짧은 주제명"}},{{"id":3,"title":"짧은 주제명"}}]}}"""
 
         response = self.llm.invoke(prompt)
         data = self._parse_json(response.content)
         return data["topics"], docs
 
-    # ── Step 2: 선택된 주제로 재랭크 → 페이지 근거 답변 ─────────────────
+    # ── Step 2: 선택된 주제로 재랭크 → (pg. X) 출처 포함 답변 ───────────
 
     def get_detailed_answer(
-        self, query: str, selected_grade: str, selected_topic: dict, all_docs: list
+        self,
+        query: str,
+        selected_grade: str,
+        selected_topic: dict,
+        all_docs: list,
+        conversation_history: list,
     ):
-        """선택된 주제로 CohereRerank 재랭크 후 페이지 출처와 함께 답변한다."""
+        """선택된 주제로 CohereRerank 재랭크 후 (pg. X) 형식으로 출처를 명시하며 답변한다."""
         topic_query = f"{selected_topic['title']} {query}"
 
         compressor = CohereRerank(
@@ -119,16 +124,26 @@ class AdvancedRAG:
             ranked_docs = all_docs[:3]
 
         context = "\n\n".join(
-            f"[PDF {doc.metadata.get('page', 0)+1}페이지]\n{doc.page_content}"
+            f"[pg.{doc.metadata.get('page', 0)+1}]\n{doc.page_content}"
             for doc in ranked_docs
         )
+
+        # 최근 대화 내역 (최대 6턴)
+        history_text = ""
+        if conversation_history:
+            history_text = "\n[이전 대화]\n"
+            for turn in conversation_history[-6:]:
+                role = "사용자" if turn["role"] == "user" else "답변"
+                history_text += f"{role}: {turn['content']}\n"
+            history_text += "\n"
 
         template = """당신은 고등학교 교육과정 편성 및 운영 지침 전문 상담원입니다.
 선택된 학년: {grade}학년
 선택된 주제: {topic}
-
-아래 참고 문서를 바탕으로 질문에 구체적으로 답변하세요.
-각 내용의 출처를 반드시 "PDF X페이지에 따르면" 형식으로 명시하세요.
+{history}
+아래 참고 문서를 바탕으로 질문에 구체적이고 명확하게 답변하세요.
+각 내용마다 출처를 "(pg. X)에 따르면" 또는 문장 끝에 "(pg. X)" 형식으로 반드시 명시하세요.
+이전 대화 맥락이 있다면 자연스럽게 이어서 답변하세요.
 문서에 없는 내용은 추측하지 마세요.
 
 참고 문서:
@@ -142,7 +157,8 @@ class AdvancedRAG:
         return chain.invoke(
             {
                 "grade": selected_grade,
-                "topic": f"{selected_topic['title']}: {selected_topic['desc']}",
+                "topic": selected_topic["title"],
+                "history": history_text,
                 "context": context,
                 "question": query,
             }
@@ -172,32 +188,35 @@ def select_grade() -> str:
 
 
 def run_topic_selection(rag: AdvancedRAG, query: str, grade: str):
-    """주제 선택 루프. (selected_topic, query, docs) 또는 None 반환."""
+    """주제 선택 루프. (selected_topic, final_query, docs) 또는 None 반환."""
+    current_query = query
     while True:
         print("\n관련 주제 분석 중...")
         try:
-            topics, docs = rag.suggest_topics(query, grade)
+            topics, docs = rag.suggest_topics(current_query, grade)
         except Exception as e:
             print(f"오류: {e}")
             return None
 
         print("\n어떤 내용이 궁금하신가요?")
         for t in topics:
-            print(f"  {t['id']}) {t['title']} — {t['desc']}")
-        print("  3) 기타 — 질문을 더 구체적으로 다시 입력하기")
+            print(f"  {t['id']}) {t['title']}")
+        print("  4) 기타 — 질문을 다시 입력하기")
 
-        choice = input("\n선택 (1/2/3): ").strip()
+        choice = input("\n선택 (1/2/3/4): ").strip()
 
-        if choice == "3":
-            query = input("더 구체적인 질문을 입력하세요: ").strip()
-            if not query:
+        if choice == "4":
+            current_query = input("더 구체적인 질문을 입력하세요: ").strip()
+            if not current_query:
                 return None
             continue  # 새 질문으로 주제 재분석
 
-        if choice in ("1", "2"):
-            return topics[int(choice) - 1], query, docs
+        if choice in ("1", "2", "3"):
+            idx = int(choice) - 1
+            if idx < len(topics):
+                return topics[idx], current_query, docs
 
-        print("1, 2, 또는 3을 입력하세요.")
+        print("1, 2, 3, 또는 4를 입력하세요.")
 
 
 def run_interactive(rag: AdvancedRAG):
@@ -206,11 +225,17 @@ def run_interactive(rag: AdvancedRAG):
     print("  (종료: 'quit' 입력)")
     print("=" * 55)
 
-    while True:
-        grade = select_grade()
+    # 학년은 세션 시작 시 한 번만 선택
+    grade = select_grade()
+    conversation_history: list[dict] = []
 
-        query = input("\n질문을 입력하세요: ").strip()
-        if query.lower() == "quit":
+    print("\n질문을 입력하세요. 언제든 'quit'을 입력하면 종료됩니다.")
+
+    while True:
+        print()
+        query = input("질문: ").strip()
+
+        if query.lower() in ("quit", "exit", "종료", "q"):
             break
         if not query:
             continue
@@ -221,22 +246,36 @@ def run_interactive(rag: AdvancedRAG):
 
         selected_topic, final_query, docs = result
 
-        print(f"\n'{selected_topic['title']}'에 대한 답변 생성 중...")
+        print(f"\n'{selected_topic['title']}' 답변 생성 중...")
         try:
-            response = rag.get_detailed_answer(final_query, grade, selected_topic, docs)
+            response = rag.get_detailed_answer(
+                final_query, grade, selected_topic, docs, conversation_history
+            )
             print("\n" + "=" * 55)
             print(response.content)
             print("=" * 55)
+
+            # 대화 기록 업데이트 (follow-up 맥락 유지)
+            conversation_history.append({"role": "user", "content": final_query})
+            conversation_history.append({"role": "assistant", "content": response.content})
+
         except Exception as e:
             print(f"오류: {e}")
 
-        again = input("\n다른 질문이 있으신가요? (y/n): ").strip().lower()
-        if again != "y":
-            break
+        # 추가 안내 없이 바로 다음 질문 대기
 
     print("\n시스템을 종료합니다.")
 
 
 if __name__ == "__main__":
     rag = AdvancedRAG()
+
+    # ── 최초 1회만 인덱싱 시 아래 주석 해제 후 실행 ──
+    # base_dir = os.path.dirname(os.path.abspath(__file__))
+    # files = [
+    #     os.path.join(base_dir, "data", "2026학년도 고등학교 1,2학년 교육과정 편성·운영 방향.pdf"),
+    #     os.path.join(base_dir, "data", "2026학년도 고등학교 3학년 교육과정 편성·운영 방향.pdf"),
+    # ]
+    # rag.ingest_documents(files)
+
     run_interactive(rag)
