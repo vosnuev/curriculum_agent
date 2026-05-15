@@ -169,10 +169,33 @@ class AdvancedRAG:
         template = """당신은 고등학교 교육과정 편성 및 운영 지침 전문 상담원입니다.
 선택된 학년: {grade}학년
 {history}
-아래 참고 문서를 바탕으로 질문에 구체적이고 명확하게 답변하세요.
-각 내용마다 출처를 "(pg. X)에 따르면" 또는 문장 끝에 "(pg. X)" 형식으로 반드시 명시하세요.
-이전 대화 맥락이 있다면 자연스럽게 이어서 답변하세요.
-문서에 없는 내용은 추측하지 마세요.
+아래 참고 문서를 바탕으로 질문에 답변하세요.
+반드시 아래 마크다운 구조를 정확히 따르세요.
+
+━━━ 답변 형식 ━━━
+
+## 핵심 답변
+[1~2문장으로 질문에 직접 답변]
+
+## [내용 섹션 제목] | pg.X
+[상세 내용. 항목 비교나 목록은 반드시 마크다운 표(|col|col|)로 작성]
+
+### [하위 구분] (필요한 경우)
+[내용 또는 표]
+
+## ⚠️ 주의사항 (관련 주의사항이 있을 때만 포함)
+1. **[항목명]**: [설명]
+2. **[항목명]**: [설명]
+
+## [추가 섹션] | pg.X (추가 정보가 있을 경우)
+[내용]
+
+━━━ 작성 규칙 ━━━
+- 반드시 "## 핵심 답변"으로 시작할 것
+- 출처 페이지는 섹션 제목 뒤에 "| pg.X" 형식으로 표기
+- 비교/목록 정보는 표로 정리
+- 이전 대화 맥락이 있으면 자연스럽게 이어서 답변
+- 문서에 없는 내용은 추측하지 말 것
 
 참고 문서:
 {context}
@@ -247,17 +270,4 @@ def handle_query(rag: AdvancedRAG, query: str, grade: str, conversation_history:
                 print(f"오류: {e}")
                 return None
 
-        # ── 포괄적 질문: 보기 제시 ──────────────────────────────────────
-        topics = result.get("topics", [])
-        if not topics:
-            # topics가 비어있으면 직접 답변으로 폴백
-            print("\n답변 생성 중...")
-            try:
-                answer = rag.get_answer(current_query, grade, current_query, docs, conversation_history)
-                print("\n" + "=" * 55)
-                print(answer)
-                print("=" * 55)
-                return answer
-            except Exception as e:
-                print(f"오류: {e}")
-                re
+        # ── 포괄적 질문: 보기 제시 ──────────────────
