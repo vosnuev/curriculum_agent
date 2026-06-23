@@ -1,75 +1,48 @@
-# 📚 Curriculum RAG Agent
+# Curriculum RAG Agent (교육과정 RAG Q&A 에이전트)
 
-> 2026학년도 고등학교 교육과정 편성·운영 방향 PDF를 기반으로 한 학년별 맞춤형 RAG Q&A 에이전트
+> Two-stage RAG agent that answers questions about Seoul high school curriculum documents with PDF page citations.
+> (서울특별시교육청 고등학교 교육과정 문서를 기반으로 PDF 페이지 출처를 명시하며 답변하는 2단계 RAG 에이전트)
 
-## 📌 프로젝트 개요
+---
 
-학생, 교사, 학부모가 고등학교 교육과정에 대해 궁금한 점을 자연어로 질문하면, 학년별 공식 문서에서 정확한 정보를 찾아 **PDF 페이지 출처를 명시하며** 답변하는 RAG(Retrieval-Augmented Generation) 에이전트입니다.
+## Tech Stack (기술 스택)
 
-**지원 문서**
+![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi&logoColor=white)
+![LangChain](https://img.shields.io/badge/LangChain-0.3+-1C3C3C?logo=langchain&logoColor=white)
+![OpenAI](https://img.shields.io/badge/OpenAI_GPT--4o-412991?logo=openai&logoColor=white)
+![Pinecone](https://img.shields.io/badge/Pinecone-Vector_DB-00A67E)
+![Cohere](https://img.shields.io/badge/Cohere-Rerank-D97706)
+![uv](https://img.shields.io/badge/uv-package_manager-DE5FE9)
 
-- `2026학년도 고등학교 1·2학년 교육과정 편성·운영 방향.pdf`
-- `2026학년도 고등학교 3학년 교육과정 편성·운영 방향.pdf`
+| Layer | Technology |
+|-------|-----------|
+| LLM | OpenAI GPT-4o |
+| Embedding | OpenAI text-embedding-3-small |
+| Vector DB | Pinecone (Serverless, cosine, dim=1536) |
+| Reranker | Cohere rerank-multilingual-v3.0 |
+| Framework | LangChain (langchain, langchain-openai, langchain-pinecone, langchain-cohere) |
+| Backend API | FastAPI + Uvicorn |
+| Frontend | HTML/CSS/JS (Replit deployment) |
+| Package Manager | [uv](https://docs.astral.sh/uv/) |
 
-> 출처: 서울특별시교육청
+---
 
+## Features (주요 기능)
 
-## 🏗️ 아키텍처 — 스마트 라우팅 플로우
+### 1. Smart Routing — Direct Answer vs. Topic Selection (스마트 라우팅)
+After retrieval, the LLM classifies the question before generating an answer.
 
-```
-사용자 질문 입력
-    │
-    ▼
-[학년 선택] 세션 시작 시 1회 선택 (1,2학년 / 3학년)
-    │
-    ▼
-[Multi-Query 확장]  질문 → 다각도 유사 질문 N개 자동 생성
-    │
-    ▼
-[Pinecone 벡터 검색]  k=15, grade 메타필터
-    │
-    ▼
-[LLM 질문 분석] ──────────────────────────────────────
-    │                                                  │
-    ▼ 포괄적 질문                          구체적 질문  │
-[보기 4개 제시]                                        │
-  1) 범주 A  (서로 다른 카테고리)                       │
-  2) 범주 B                                            │
-  3) 범주 C                                            │
-  4) 기타 — 질문 재입력                                │
-    │ 사용자 선택                                       │
-    ▼                                                  │
-[Cohere Rerank]  선택 주제 기준 재랭크 → Top 3  ←──────┘
-    │
-    ▼
-[LLM 답변 생성]  구조화된 마크다운 + (pg. X) 출처 명시
-    │
-    ▼
-섹션별 구조화 답변 출력
-  ┌─ 핵심 답변
-  ├─ 상세 내용 섹션 (표 포함) + 출처
-  └─ 주의사항 (해당 시)
-    │
-    ▼
-대화 기록 유지 → 추가 질문 대기 (quit 입력 전까지 지속)
-```
-
-
-## ✨ 주요 기능
-
-### 1. 스마트 라우팅 — 직접 답변 vs 보기 제시
-LLM이 질문을 먼저 분석해 처리 방식을 결정합니다.
-
-- **직접 답변**: 질문에 특정 학교유형, 과목명, 수치 등 명확한 키워드가 있거나 PDF 내 1~2곳에 답이 집중된 경우 → 보기 없이 바로 답변
-- **보기 제시**: 질문이 여러 범주에 걸쳐 있는 경우 → 서로 다른 카테고리 3개 + 기타 = **4개 선택지** 제시
+- **Direct answer (`action: answer`)**: Query contains a specific school type, subject name, or numeric value, or the answer is concentrated in 1–2 PDF locations.
+- **Topic selection (`action: choose`)**: Query spans multiple categories (e.g., school types, subject areas) — the agent presents 3 distinct topic choices + "Other."
 
 ```
-# 직접 답변 예시 (구체적 질문)
-질문: 일반고등학교 총 이수해야하는 학점은?
-→ 바로 답변: "일반 고등학교에서 총 이수해야 하는 학점은 192학점입니다. (pg. 22)"
+# Direct answer example
+Query: "일반고등학교 총 이수학점은?"
+→ "일반 고등학교의 총 이수학점은 192학점입니다. (pg. 22)"
 
-# 보기 제시 예시 (포괄적 질문)
-질문: 이수학점
+# Topic selection example
+Query: "이수학점"
 → 어떤 내용이 궁금하신가요?
   1) 일반고
   2) 특목고
@@ -77,73 +50,155 @@ LLM이 질문을 먼저 분석해 처리 방식을 결정합니다.
   4) 기타 — 질문을 다시 입력하기
 ```
 
-### 2. 구조화된 답변 + (pg. X) 출처 명시
-답변은 마크다운 섹션 구조로 생성됩니다. 각 섹션마다 PDF 페이지 출처를 명시합니다.
+### 2. Structured Answer with PDF Page Citations (구조화된 답변 + 출처 명시)
+Every answer follows a fixed markdown structure. Page references appear inline as `| pg.X`.
 
 ```markdown
 ## 핵심 답변
-네, 공통과목을 대체할 수 있는 과목이 있습니다!
+네, 공통과목을 대체할 수 있는 과목이 있습니다.
 
 ## 대체 가능 과목 | pg.4
-### 수학 교과
 | 원래 공통과목 | 대체 과목 |
 |---|---|
 | 공통수학1 | 기본수학1 |
 | 공통수학2 | 기본수학2 |
 
 ## ⚠️ 주의사항
-1. **선택적 대체**: 대체과목은 필수옵션이 아닙니다.
+1. **선택적 대체**: 대체과목은 필수가 아닙니다.
 2. **동시 이수 불가**: 기본수학1과 공통수학1은 동시 이수할 수 없습니다.
 ```
 
-### 3. 대화 기록 유지 — 추가 질문 지원
-학년은 세션 시작 시 한 번만 선택하고, 이후 답변마다 대화 기록(최근 6턴)을 유지합니다. `quit` 입력 전까지 자연스럽게 후속 질문이 가능합니다.
-
-### 4. 학년별 문서 분리 인덱싱 (Metadata Filtering)
-PDF 로드 시 `grade` 메타데이터를 부여해 Pinecone에 인덱싱합니다. 1·2학년 질문 시 3학년 문서가 혼입되는 오답을 원천 차단합니다.
+### 3. Grade-based Metadata Filtering (학년별 메타데이터 필터링)
+Documents are indexed with a `grade` metadata field. Pinecone filters at query time so Grade 1–2 queries never pull Grade 3 content.
 
 ```python
 {"grade": "1,2"}  # 1·2학년 문서
 {"grade": "3"}    # 3학년 문서
 ```
 
-### 5. Multi-Query 질문 확장
-사용자가 "창체"처럼 짧게 입력해도 LLM이 자동으로 "창의적 체험활동", "창체 배당 시간", "창체 운영 방식" 등 유사 질문을 생성해 검색 범위를 넓힙니다.
+### 4. Multi-Query Expansion (Multi-Query 질문 확장)
+Short or ambiguous queries (e.g., "창체") are automatically expanded by the LLM into multiple paraphrased queries to improve recall.
 
-### 6. Cohere Rerank
-검색된 전체 문서를 선택된 주제(또는 원본 쿼리) 기준으로 재랭크하여 Top 3만 LLM에 전달합니다. 토큰 절약과 답변 품질 향상을 동시에 달성합니다.
+### 5. Cohere Rerank (재랭크)
+All retrieved documents are re-ranked against the selected topic query. Only the top 3 are passed to the LLM — reducing token usage and improving answer quality.
 
+### 6. Conversation History (대화 기록 유지)
+Grade is selected once per session. The last 6 turns are maintained and passed to the LLM, enabling natural follow-up questions until the user types `quit`.
 
-## 🛠️ 기술 스택
+---
 
-| 구분 | 기술 |
-|------|------|
-| LLM | OpenAI GPT-4o |
-| Embedding | OpenAI text-embedding-3-small |
-| Vector DB | Pinecone |
-| Reranker | Cohere Rerank (rerank-multilingual-v3.0) |
-| Framework | LangChain (langchain-classic, langchain-core) |
-| Backend API | FastAPI + Uvicorn |
-| Frontend | HTML/CSS/JS (Replit 배포) |
-| 환경 관리 | [uv](https://docs.astral.sh/uv/) |
+## Project Structure (프로젝트 구조)
 
+```
+curriculum_agent/
+├── data/
+│   ├── 2026학년도 고등학교 1,2학년 교육과정 편성·운영 방향.pdf
+│   └── 2026학년도 고등학교 3학년 교육과정 편성·운영 방향.pdf
+├── frontend/
+│   └── index.html          # Web frontend (Replit deployment)
+├── rag.py                  # Core RAG pipeline (AdvancedRAG class + CLI loop)
+├── api.py                  # FastAPI backend server
+├── pyproject.toml          # uv project config & dependencies
+├── uv.lock                 # Locked dependency manifest
+└── .env                    # Environment variables (not committed)
+```
 
-## ⚙️ 환경 설정
+---
 
-### 사전 요구사항
+## Usage Flow (사용 흐름)
+
+```
+User input
+    │
+    ▼
+[Grade selection]  Once per session — Grade 1·2 or Grade 3
+    │
+    ▼
+[Multi-Query expansion]  LLM generates N paraphrased queries
+    │
+    ▼
+[Pinecone vector search]  k=15, filtered by grade metadata
+    │
+    ▼
+[LLM query analysis] ─────────────────────────────────────
+    │                                                      │
+    ▼ Broad/ambiguous query                  Specific query│
+[Present 3 topic choices + Other]                         │
+    │ User selects topic                                   │
+    ▼                                                      │
+[Cohere Rerank]  Re-rank all docs by selected topic → Top 3 ←─┘
+    │
+    ▼
+[LLM answer generation]  Structured markdown + (pg. X) citations
+    │
+    ▼
+Structured answer output
+  ├─ 핵심 답변 (Core answer)
+  ├─ Detail sections with tables + page citations
+  └─ ⚠️ 주의사항 (Warnings, if applicable)
+    │
+    ▼
+Conversation history maintained → await next question (until quit)
+```
+
+---
+
+## Architecture (아키텍처)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Frontend (Replit — frontend/index.html)                    │
+│  HTML/CSS/JS  ←──── REST API (JSON) ────→  FastAPI (api.py) │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+                    ┌──────────▼──────────┐
+                    │   AdvancedRAG (rag.py)             │
+                    │                                    │
+                    │  POST /api/query                   │
+                    │   └─ analyze_query()               │
+                    │       ├─ MultiQueryRetriever       │
+                    │       │   └─ Pinecone (k=15)       │
+                    │       └─ LLM routing decision      │
+                    │                                    │
+                    │  POST /api/answer                  │
+                    │   └─ get_answer()                  │
+                    │       ├─ CohereRerank (top 3)      │
+                    │       └─ LLM answer generation     │
+                    └────────────────────────────────────┘
+                               │
+               ┌───────────────┼───────────────┐
+               ▼               ▼               ▼
+          Pinecone         OpenAI           Cohere
+       (Vector Store)   (GPT-4o +        (Reranker)
+                      text-embedding-3-small)
+```
+
+**API Endpoints:**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/health` | Health check |
+| `POST` | `/api/query` | Analyze query → return `action` + `topics` + `cache_key` |
+| `POST` | `/api/answer` | Rerank + generate structured answer |
+
+---
+
+## Environment Setup (환경 설정)
+
+### Prerequisites (사전 요구사항)
 
 - Python 3.11+
-- [uv](https://docs.astral.sh/uv/) 설치
+- [uv](https://docs.astral.sh/uv/) package manager
 
 ```bash
-# uv 설치 (macOS/Linux)
+# Install uv (macOS/Linux)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# uv 설치 (Windows PowerShell)
+# Install uv (Windows PowerShell)
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-### 프로젝트 설치
+### Install Project (프로젝트 설치)
 
 ```bash
 git clone https://github.com/vosnuev/curriculum_agent.git
@@ -151,9 +206,9 @@ cd curriculum_agent
 uv sync
 ```
 
-### 환경 변수 설정
+### Environment Variables (환경 변수)
 
-`.env` 파일을 프로젝트 루트에 생성합니다.
+Create a `.env` file in the project root:
 
 ```env
 OPENAI_API_KEY=sk-...
@@ -162,20 +217,28 @@ PINECONE_INDEX_NAME=school-curriculum
 COHERE_API_KEY=...
 ```
 
+| Variable | Description |
+|----------|-------------|
+| `OPENAI_API_KEY` | OpenAI API key (GPT-4o + text-embedding-3-small) |
+| `PINECONE_API_KEY` | Pinecone API key |
+| `PINECONE_INDEX_NAME` | Pinecone index name (default: `school-curriculum`) |
+| `COHERE_API_KEY` | Cohere API key (for rerank-multilingual-v3.0) |
 
-## 🚀 실행 방법
+---
 
-### 1. 문서 인덱싱 (최초 1회)
+## How to Run (실행 방법)
 
-`rag.py` 내 `__main__` 블록에서 `ingest_documents` 주석을 해제하고 실행합니다.
+### 1. Index Documents — First Run Only (문서 인덱싱 — 최초 1회)
+
+Uncomment `ingest_documents` in the `__main__` block of `rag.py`, then run:
 
 ```bash
 uv run python rag.py
 ```
 
-인덱싱 완료 후 다시 주석 처리합니다.
+Re-comment after indexing is complete.
 
-### 2. CLI Q&A 실행
+### 2. CLI Q&A
 
 ```bash
 uv run python rag.py
@@ -208,57 +271,31 @@ uv run python rag.py
 | 창의적 체험활동 | 18학점 |
 | 합계 | 192학점 |
 =======================================================
-
-질문: (추가 질문 입력 또는 quit)
 ```
 
-### 3. FastAPI 백엔드 실행 (웹 UI용)
+### 3. FastAPI Backend (웹 UI용 백엔드 실행)
 
 ```bash
 uv run uvicorn api:app --reload --port 8000
 ```
 
-Replit 프론트엔드(`frontend/index.html`)에서 `API_BASE` 주소를 백엔드 URL로 설정합니다.
-로컬 서버 외부 노출이 필요하면 [ngrok](https://ngrok.com)을 사용합니다.
+Set `API_BASE` in `frontend/index.html` to the backend URL.
+
+For external access, use [ngrok](https://ngrok.com):
 
 ```bash
 ngrok http 8000
-# 발급된 https://xxxx.ngrok-free.app 주소를 index.html의 API_BASE에 입력
+# Copy the https://xxxx.ngrok-free.app URL into index.html API_BASE
 ```
 
+---
 
-## 📁 프로젝트 구조
+## License & References (라이선스 & 참고 문서)
 
-```
-curriculum_agent/
-├── data/
-│   ├── 2026학년도 고등학교 1,2학년 교육과정 편성·운영 방향.pdf
-│   └── 2026학년도 고등학교 3학년 교육과정 편성·운영 방향.pdf
-├── frontend/
-│   └── index.html          # Replit 웹 프론트엔드
-├── rag.py                  # RAG 핵심 파이프라인
-├── api.py                  # FastAPI 백엔드 서버
-├── pyproject.toml          # uv 프로젝트 설정 및 의존성
-├── uv.lock                 # 의존성 잠금 파일
-└── .env                    # 환경 변수 (git 제외)
-```
+**License:** MIT
 
+**Source Documents (출처 문서):**
+- 서울특별시교육청, *2026학년도 고등학교 1·2학년 교육과정 편성·운영 방향* (2025)
+- 서울특별시교육청, *2026학년도 고등학교 3학년 교육과정 편성·운영 방향* (2025)
 
-## 🔑 핵심 구현 포인트
-
-| 포인트 | 설명 |
-|--------|------|
-| **스마트 라우팅** | 질문 구체성 분석 → 직접 답변 or 보기 제시 자동 결정 |
-| **보기 카테고리 분리** | 비슷한 표현 반복 금지, 서로 다른 범주로만 구성 |
-| **구조화된 마크다운 답변** | 핵심 답변 / 상세 섹션 / 주의사항 구조로 LLM 출력 포맷 제어 |
-| **(pg. X) 출처 명시** | 섹션 제목 옆에 `| pg.X` 형식으로 근거 제시 |
-| **대화 기록 유지** | 최근 6턴 히스토리를 LLM에 전달 → 후속 질문 자연스럽게 처리 |
-| **메타데이터 필터링** | 인덱싱 시 학년 정보 저장 → 검색 시 해당 학년 문서만 조회 |
-| **Multi-Query** | 짧고 모호한 질문도 LLM이 다양한 형태로 확장 → 召回率 향상 |
-| **Cohere Rerank** | 검색 문서 전체를 선택 주제로 재랭크 → Top 3만 LLM에 전달 |
-| **FastAPI + Replit** | REST API 분리 → 프론트엔드와 완전 독립 배포 가능 |
-
-
-## 📝 라이선스
-
-MIT License
+> The PDF documents in `data/` are official publications of the Seoul Metropolitan Office of Education (서울특별시교육청). All curriculum information is sourced directly from these documents.
