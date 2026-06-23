@@ -1,93 +1,62 @@
-# Curriculum RAG Agent (교육과정 RAG Q&A 에이전트)
+# Curriculum Recommendation Agent
 
-> Two-stage RAG agent that answers questions about Seoul high school curriculum documents with PDF page citations.
-> (서울특별시교육청 고등학교 교육과정 문서를 기반으로 PDF 페이지 출처를 명시하며 답변하는 2단계 RAG 에이전트)
+<div align="center">
 
----
+![Python](https://img.shields.io/badge/Python-3776AB?style=flat-square&logo=python&logoColor=white)
+![OpenAI](https://img.shields.io/badge/OpenAI-412991?style=flat-square&logo=openai&logoColor=white)
+![LangChain](https://img.shields.io/badge/LangChain-1C3C3C?style=flat-square&logo=langchain&logoColor=white)
+![Pinecone](https://img.shields.io/badge/Pinecone-000000?style=flat-square&logo=pinecone&logoColor=white)
+![Cohere](https://img.shields.io/badge/Cohere_Rerank-D97706?style=flat-square&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
 
-## Tech Stack (기술 스택)
-
-![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi&logoColor=white)
-![LangChain](https://img.shields.io/badge/LangChain-0.3+-1C3C3C?logo=langchain&logoColor=white)
-![OpenAI](https://img.shields.io/badge/OpenAI_GPT--4o-412991?logo=openai&logoColor=white)
-![Pinecone](https://img.shields.io/badge/Pinecone-Vector_DB-00A67E)
-![Cohere](https://img.shields.io/badge/Cohere-Rerank-D97706)
-![uv](https://img.shields.io/badge/uv-package_manager-DE5FE9)
-
-| Layer | Technology |
-|-------|-----------|
-| LLM | OpenAI GPT-4o |
-| Embedding | OpenAI text-embedding-3-small |
-| Vector DB | Pinecone (Serverless, cosine, dim=1536) |
-| Reranker | Cohere rerank-multilingual-v3.0 |
-| Framework | LangChain (langchain, langchain-openai, langchain-pinecone, langchain-cohere) |
-| Backend API | FastAPI + Uvicorn |
-| Frontend | HTML/CSS/JS (Replit deployment) |
-| Package Manager | [uv](https://docs.astral.sh/uv/) |
+</div>
 
 ---
 
-## Features (주요 기능)
+## 📌 Overview
 
-### 1. Smart Routing — Direct Answer vs. Topic Selection (스마트 라우팅)
-After retrieval, the LLM classifies the question before generating an answer.
+A **2-stage RAG (Retrieval-Augmented Generation) agent** that answers questions about Seoul high school curriculum documents with precise PDF page citations.
 
-- **Direct answer (`action: answer`)**: Query contains a specific school type, subject name, or numeric value, or the answer is concentrated in 1–2 PDF locations.
-- **Topic selection (`action: choose`)**: Query spans multiple categories (e.g., school types, subject areas) — the agent presents 3 distinct topic choices + "Other."
+The agent ingests official curriculum PDFs, indexes them into a Pinecone vector store, and serves personalized answers through a two-step pipeline: **vector search → Cohere reranking → GPT-4o generation**. A smart routing layer decides whether to answer directly or present topic choices when the query is broad or ambiguous.
 
-```
-# Direct answer example
-Query: "일반고등학교 총 이수학점은?"
-→ "일반 고등학교의 총 이수학점은 192학점입니다. (pg. 22)"
-
-# Topic selection example
-Query: "이수학점"
-→ 어떤 내용이 궁금하신가요?
-  1) 일반고
-  2) 특목고
-  3) 자율·특성화고
-  4) 기타 — 질문을 다시 입력하기
-```
-
-### 2. Structured Answer with PDF Page Citations (구조화된 답변 + 출처 명시)
-Every answer follows a fixed markdown structure. Page references appear inline as `| pg.X`.
-
-```markdown
-## 핵심 답변
-네, 공통과목을 대체할 수 있는 과목이 있습니다.
-
-## 대체 가능 과목 | pg.4
-| 원래 공통과목 | 대체 과목 |
-|---|---|
-| 공통수학1 | 기본수학1 |
-| 공통수학2 | 기본수학2 |
-
-## ⚠️ 주의사항
-1. **선택적 대체**: 대체과목은 필수가 아닙니다.
-2. **동시 이수 불가**: 기본수학1과 공통수학1은 동시 이수할 수 없습니다.
-```
-
-### 3. Grade-based Metadata Filtering (학년별 메타데이터 필터링)
-Documents are indexed with a `grade` metadata field. Pinecone filters at query time so Grade 1–2 queries never pull Grade 3 content.
-
-```python
-{"grade": "1,2"}  # 1·2학년 문서
-{"grade": "3"}    # 3학년 문서
-```
-
-### 4. Multi-Query Expansion (Multi-Query 질문 확장)
-Short or ambiguous queries (e.g., "창체") are automatically expanded by the LLM into multiple paraphrased queries to improve recall.
-
-### 5. Cohere Rerank (재랭크)
-All retrieved documents are re-ranked against the selected topic query. Only the top 3 are passed to the LLM — reducing token usage and improving answer quality.
-
-### 6. Conversation History (대화 기록 유지)
-Grade is selected once per session. The last 6 turns are maintained and passed to the LLM, enabling natural follow-up questions until the user types `quit`.
+> **Input:** User's grade level + natural language question  
+> **Output:** Structured study plan / curriculum answer with PDF page citations
 
 ---
 
-## Project Structure (프로젝트 구조)
+## ✨ Features
+
+| # | Feature | Description |
+|---|---------|-------------|
+| 1 | **Smart Routing** | LLM classifies each query post-retrieval — answers directly when specific, presents 3 topic choices when the query is broad or ambiguous |
+| 2 | **2-Stage RAG** | Vector search (Pinecone, k=15) followed by Cohere reranking (top 3) for high-precision context selection |
+| 3 | **Multi-Query Expansion** | Short or ambiguous queries are automatically paraphrased into multiple queries by the LLM to maximize recall |
+| 4 | **Grade-Based Metadata Filtering** | Documents are indexed with a `grade` field; Pinecone filters at query time so grade 1–2 queries never surface grade 3 content |
+| 5 | **Structured Answers with Page Citations** | Every response follows a fixed markdown schema with inline `pg.X` references back to the source PDF |
+| 6 | **Conversation History** | The last 6 turns are maintained per session, enabling natural follow-up questions |
+| 7 | **REST API + Web UI** | FastAPI backend with `/api/query` and `/api/answer` endpoints; HTML/CSS/JS frontend deployable on Replit |
+
+---
+
+## 🛠 Tech Stack
+
+| Category | Technology | Purpose |
+|----------|-----------|---------|
+| **LLM** | OpenAI GPT-4o | Query routing, answer generation |
+| **Embedding** | OpenAI text-embedding-3-small (dim=1536) | Document and query vectorization |
+| **Vector Database** | Pinecone Serverless (cosine, AWS us-east-1) | Scalable similarity search with metadata filtering |
+| **Reranker** | Cohere rerank-multilingual-v3.0 | 2nd-stage precision reranking |
+| **RAG Framework** | LangChain (langchain, langchain-openai, langchain-pinecone, langchain-cohere) | Pipeline orchestration |
+| **Multi-Query** | LangChain MultiQueryRetriever | Query expansion for improved recall |
+| **Backend API** | FastAPI + Uvicorn | REST API server |
+| **Frontend** | HTML / CSS / JavaScript | Web chat interface (Replit) |
+| **Package Manager** | [uv](https://docs.astral.sh/uv/) | Fast Python dependency management |
+| **PDF Parsing** | PyPDF + RecursiveCharacterTextSplitter | Document ingestion and chunking |
+
+---
+
+## 📁 Project Structure
 
 ```
 curriculum_agent/
@@ -105,100 +74,22 @@ curriculum_agent/
 
 ---
 
-## Usage Flow (사용 흐름)
+## 🚀 Getting Started
 
-```
-User input
-    │
-    ▼
-[Grade selection]  Once per session — Grade 1·2 or Grade 3
-    │
-    ▼
-[Multi-Query expansion]  LLM generates N paraphrased queries
-    │
-    ▼
-[Pinecone vector search]  k=15, filtered by grade metadata
-    │
-    ▼
-[LLM query analysis] ─────────────────────────────────────
-    │                                                      │
-    ▼ Broad/ambiguous query                  Specific query│
-[Present 3 topic choices + Other]                         │
-    │ User selects topic                                   │
-    ▼                                                      │
-[Cohere Rerank]  Re-rank all docs by selected topic → Top 3 ←─┘
-    │
-    ▼
-[LLM answer generation]  Structured markdown + (pg. X) citations
-    │
-    ▼
-Structured answer output
-  ├─ 핵심 답변 (Core answer)
-  ├─ Detail sections with tables + page citations
-  └─ ⚠️ 주의사항 (Warnings, if applicable)
-    │
-    ▼
-Conversation history maintained → await next question (until quit)
-```
-
----
-
-## Architecture (아키텍처)
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Frontend (Replit — frontend/index.html)                    │
-│  HTML/CSS/JS  ←──── REST API (JSON) ────→  FastAPI (api.py) │
-└──────────────────────────────┬──────────────────────────────┘
-                               │
-                    ┌──────────▼──────────┐
-                    │   AdvancedRAG (rag.py)             │
-                    │                                    │
-                    │  POST /api/query                   │
-                    │   └─ analyze_query()               │
-                    │       ├─ MultiQueryRetriever       │
-                    │       │   └─ Pinecone (k=15)       │
-                    │       └─ LLM routing decision      │
-                    │                                    │
-                    │  POST /api/answer                  │
-                    │   └─ get_answer()                  │
-                    │       ├─ CohereRerank (top 3)      │
-                    │       └─ LLM answer generation     │
-                    └────────────────────────────────────┘
-                               │
-               ┌───────────────┼───────────────┐
-               ▼               ▼               ▼
-          Pinecone         OpenAI           Cohere
-       (Vector Store)   (GPT-4o +        (Reranker)
-                      text-embedding-3-small)
-```
-
-**API Endpoints:**
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/health` | Health check |
-| `POST` | `/api/query` | Analyze query → return `action` + `topics` + `cache_key` |
-| `POST` | `/api/answer` | Rerank + generate structured answer |
-
----
-
-## Environment Setup (환경 설정)
-
-### Prerequisites (사전 요구사항)
+### Prerequisites
 
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/) package manager
 
 ```bash
-# Install uv (macOS/Linux)
+# Install uv (macOS / Linux)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Install uv (Windows PowerShell)
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-### Install Project (프로젝트 설치)
+### Installation
 
 ```bash
 git clone https://github.com/vosnuev/curriculum_agent.git
@@ -206,7 +97,7 @@ cd curriculum_agent
 uv sync
 ```
 
-### Environment Variables (환경 변수)
+### Environment Variables
 
 Create a `.env` file in the project root:
 
@@ -222,13 +113,9 @@ COHERE_API_KEY=...
 | `OPENAI_API_KEY` | OpenAI API key (GPT-4o + text-embedding-3-small) |
 | `PINECONE_API_KEY` | Pinecone API key |
 | `PINECONE_INDEX_NAME` | Pinecone index name (default: `school-curriculum`) |
-| `COHERE_API_KEY` | Cohere API key (for rerank-multilingual-v3.0) |
+| `COHERE_API_KEY` | Cohere API key (rerank-multilingual-v3.0) |
 
----
-
-## How to Run (실행 방법)
-
-### 1. Index Documents — First Run Only (문서 인덱싱 — 최초 1회)
+### Index Documents (First Run Only)
 
 Uncomment `ingest_documents` in the `__main__` block of `rag.py`, then run:
 
@@ -238,64 +125,149 @@ uv run python rag.py
 
 Re-comment after indexing is complete.
 
-### 2. CLI Q&A
+### Run CLI
 
 ```bash
 uv run python rag.py
 ```
 
-```
-=======================================================
-  2026 고등학교 교육과정 Q&A 시스템
-  (종료: 'quit' 입력)
-=======================================================
-
-학년을 선택하세요:
-  1) 1,2학년
-  2) 3학년
-선택 (1/2): 1
-
-질문: 일반고 총 이수학점은?
-
-분석 중...
-
-[직접 답변]
-=======================================================
-## 핵심 답변
-일반 고등학교의 총 이수학점은 192학점입니다.
-
-## 이수학점 구성 | pg.22
-| 구분 | 학점 |
-|---|---|
-| 교과 | 174학점 |
-| 창의적 체험활동 | 18학점 |
-| 합계 | 192학점 |
-=======================================================
-```
-
-### 3. FastAPI Backend (웹 UI용 백엔드 실행)
+### Run API Server
 
 ```bash
 uv run uvicorn api:app --reload --port 8000
 ```
 
-Set `API_BASE` in `frontend/index.html` to the backend URL.
-
-For external access, use [ngrok](https://ngrok.com):
+Set `API_BASE` in `frontend/index.html` to your backend URL. For external access, use [ngrok](https://ngrok.com):
 
 ```bash
 ngrok http 8000
 # Copy the https://xxxx.ngrok-free.app URL into index.html API_BASE
 ```
 
+**API Endpoints:**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/health` | Health check |
+| `POST` | `/api/query` | Retrieve docs, classify query → return `action` + optional `topics` |
+| `POST` | `/api/answer` | Rerank + generate structured answer with page citations |
+
 ---
 
-## License & References (라이선스 & 참고 문서)
+## 🔄 Usage Flow
 
-**License:** MIT
+```mermaid
+flowchart TD
+    A([User Input]) --> B[Grade Selection\nGrade 1·2 or Grade 3]
+    B --> C[Multi-Query Expansion\nLLM paraphrases query × N]
+    C --> D[Pinecone Vector Search\nk=15, filtered by grade metadata]
+    D --> E{LLM Routing\nSpecific or Broad?}
+    E -- Specific query --> G[Cohere Rerank\nTop 3 documents]
+    E -- Broad / ambiguous --> F[Present 3 Topic Choices\n+ Other option]
+    F -- User selects topic --> G
+    G --> H[GPT-4o Answer Generation\nStructured markdown + pg. citations]
+    H --> I([Structured Answer\n핵심 답변 · Detail sections · Warnings])
+    I --> J{Continue?}
+    J -- Next question --> C
+    J -- quit --> K([Session End])
+```
 
-**Source Documents (출처 문서):**
-- 서울특별시교육청, *2026학년도 고등학교 1·2학년 교육과정 편성·운영 방향* (2025)
-- 서울특별시교육청, *2026학년도 고등학교 3학년 교육과정 편성·운영 방향* (2025)
+---
+
+## 🏗 Architecture
+
+```mermaid
+graph TD
+    subgraph Client
+        UI[Web Frontend\nHTML/CSS/JS]
+    end
+
+    subgraph API Layer
+        FA[FastAPI api.py\nPOST /api/query\nPOST /api/answer]
+    end
+
+    subgraph RAG Core["RAG Core (rag.py — AdvancedRAG)"]
+        MQ[MultiQueryRetriever\nQuery Expansion]
+        PIN[Pinecone Vector Store\nServerless · cosine · dim=1536]
+        LLM_R[GPT-4o\nQuery Router]
+        CR[CohereRerank\nrerank-multilingual-v3.0\ntop_n=3]
+        LLM_A[GPT-4o\nAnswer Generator]
+    end
+
+    subgraph External Services
+        OAI[OpenAI\nGPT-4o + text-embedding-3-small]
+        PCN[Pinecone\nVector DB]
+        COH[Cohere\nReranker]
+    end
+
+    UI -->|REST JSON| FA
+    FA --> MQ
+    MQ -->|Embed + Search| PIN
+    PIN --> LLM_R
+    LLM_R -->|action: choose| FA
+    FA -->|User picks topic| CR
+    LLM_R -->|action: answer| CR
+    CR --> LLM_A
+    LLM_A --> FA --> UI
+
+    MQ -.-> OAI
+    PIN -.-> PCN
+    CR -.-> COH
+    LLM_R -.-> OAI
+    LLM_A -.-> OAI
+```
+
+**RAG Pipeline (linear view):**
+
+```
+Query
+  │
+  ▼
+[Multi-Query Expansion]  — GPT-4o generates N paraphrased queries
+  │
+  ▼
+[Pinecone Vector Search]  — k=15, metadata filter: grade
+  │
+  ▼
+[LLM Query Routing]  — action: "answer" | action: "choose"
+  │
+  ├─ "choose" → present topics → user selects
+  │
+  ▼
+[Cohere Rerank]  — re-rank all docs by selected topic → top 3
+  │
+  ▼
+[GPT-4o Answer Generation]  — structured markdown + pg.X citations
+  │
+  ▼
+Response
+```
+
+---
+
+## 🎯 Skills Demonstrated
+
+| Skill Area | Implementation Detail |
+|-----------|----------------------|
+| **RAG Pipeline Design** | 2-stage retrieval: Pinecone vector search (k=15) → Cohere reranking (top 3); separates recall from precision |
+| **LLM Integration** | GPT-4o for query routing, multi-query expansion, and structured answer generation via LangChain |
+| **Vector Database** | Pinecone Serverless index with cosine similarity, dimension 1536, and grade-based metadata filtering |
+| **Prompt Engineering** | Multi-role prompts: routing classifier (JSON output), answer generator (fixed markdown schema with citation format) |
+| **Agentic Routing** | Post-retrieval LLM decision layer that branches between direct answer and interactive topic selection |
+| **Multi-Query Retrieval** | LangChain `MultiQueryRetriever` automatically expands short/ambiguous queries to improve vector search recall |
+| **API Design** | FastAPI two-endpoint architecture decouples retrieval/routing (`/api/query`) from generation (`/api/answer`) |
+| **Document Ingestion** | PDF parsing with `PyPDFLoader`, chunk size 800 / overlap 100, metadata tagging per document |
+| **Conversation Memory** | Rolling 6-turn history passed to LLM for coherent multi-turn sessions |
+| **Dependency Management** | `uv` + `pyproject.toml` for reproducible, fast Python environment setup |
+
+---
+
+## 📄 License
+
+This project is licensed under the **MIT License**.
+
+**Source Documents:**
+- Seoul Metropolitan Office of Education, *2026 High School Grade 1·2 Curriculum Planning and Operation Guidelines* (2025)
+- Seoul Metropolitan Office of Education, *2026 High School Grade 3 Curriculum Planning and Operation Guidelines* (2025)
 
 > The PDF documents in `data/` are official publications of the Seoul Metropolitan Office of Education (서울특별시교육청). All curriculum information is sourced directly from these documents.
